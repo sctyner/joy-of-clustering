@@ -1,0 +1,603 @@
+\RequirePackage[l2tabu, orthodox]{nag}
+\documentclass[10pt]{article}
+\usepackage{mathtools}
+\usepackage{amssymb,amsmath}
+%\usepackage{fullpage}
+\usepackage[margin=0.9in]{geometry}
+\usepackage{setspace}
+\parskip 10pt
+\usepackage{parskip}
+\usepackage{pdfpages}
+\usepackage{graphicx}
+\usepackage{multirow}
+\usepackage{float}
+\usepackage[english]{babel}
+\usepackage{pdflscape}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, urlcolor=blue, linkcolor=black}
+\usepackage{microtype}
+\setcounter{secnumdepth}{0}
+\newcommand{\myparagraph}[1]{\paragraph{#1}\mbox{}\\}
+\renewcommand{\vec}[1]{\underline{\mathbf{{#1}}}}
+\newcolumntype{x}[1]{%
+>{\centering\arraybackslash}p{#1}}%
+
+%----------------------------------------------------------------------------------------
+
+\newcommand*{\plogo}{\fbox{$\mathcal{PL}$}} % Generic publisher logo
+
+%----------------------------------------------------------------------------------------
+% TITLE PAGE
+%----------------------------------------------------------------------------------------
+
+\newcommand*{\titleGP}{\begingroup % Create the command for including the title page in the document
+\centering % Center all text
+ % White space at the top of the page
+
+\rule{\textwidth}{1.6pt}\vspace*{-\baselineskip}\vspace*{2pt} % Thick horizontal line
+\rule{\textwidth}{0.4pt}\\[\baselineskip] % Thin horizontal line
+
+{\Large The Joy of Clustering}\\[0.2\baselineskip] % Title
+
+\rule{\textwidth}{0.4pt}\vspace*{-\baselineskip}\vspace{3.2pt} % Thin horizontal line
+\rule{\textwidth}{1.6pt}\\[\baselineskip] % Thick horizontal line
+
+\large{\begin{center}Samantha Tyner \\ Final Project \\ STAT 503 \\ Spring 2015\end{center}}
+\endgroup}
+
+\begin{document}
+
+\titleGP
+
+\pagestyle{plain}
+\setcounter{page}{1}
+\setcounter{secnumdepth}{2}
+
+%----------------------------------------------------------------------------------------------------
+\section{Introduction}
+\par If you watched public television in the US at any point in the 1980s or 1990s, then you have probably heard of the painter Bob Ross.  Ross hosted \emph{The Joy of Painting}, an instructional painting show, for just over 11 years in the 80s and 90s.  He was known for his calming voice, cheerful demeanor, and quick, talented brushstrokes.  After seeing a few episodes of his show, anyone can see that there are a few things that he paints over and over again, such as ``happy little trees" or ``almighty mountains." I was inspired by an April 2014 post from FiveThirtyEight\footnote{``A Statistical Analysis of the Work of Bob Ross." Walt Hickey. April 14, 2014. \url{http://fivethirtyeight.com/features/a-statistical-analysis-of-the-work-of-bob-ross/}}  to add some statistical rigor to determining the most common elements in his paintings. For the FiveThirtyEight post, Hickey watched all 401 episodes of \emph{The Joy of Painting} and hand-coded tags, such as ``at least one tree" and ``snow-covered mountain" for each of the paintings.  He then used $k$-means clustering to group the paintings into sets based on these tags. Though I admire his determination, watching and hand-coding all of those episodes seems like way more work than is necessary to accomplish this task. So in this project, I use several methods of unsupervised learning to cluster the paintings of Bob Ross into distinct groups based on the actual color composition of the paintings. My goal is to discover groups of paintings that look similar and contain similar features, such as cabins, lakes, or mountains just like Hickey, but I do it by turning the paintings themselves into data. I will then examine the different groups of paintings in order to determine the varying themes in his body of work and see if I get similar groups to Hickey. I also hope to form more groups that are more descriptive with names like, ``forest in winter" or ``lake at sunset" in order to determine the key themes in the works of Bob Ross. 
+
+\section{Data Collection}
+
+To gather my data, I first had to find a website that had a lot of image files of Bob Ross paintings. This unfortunately proved to be much more difficult than I was expecting. After a few hours of careful googling, I found a website that sells oil paintings, many of which are Bob Ross paintings. They have 242 Bob Ross paintings for sale, and 242 .jpg files associated with each painting.  First, I downloaded all of theses files using the \texttt{rvest} package to gather the links and the \texttt{download.file()} function to save all the files to my computer. This code is included in the code appendix. These .jpg files vary widely in shape and size, so I decided to scale them all down to the same size, $20 \times 20$ pixels, which provided the same number of variables per painting for my analysis later. To scale the paintings, I used a Python wrapper for ImageMagick (code in appendix). Examples of an image before and after scaling are shown in \autoref{fig:noscale} and \autoref{fig:scale}, respectivley.
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.45\textwidth}
+\centering
+\includegraphics[width = .55\textwidth]{bobross2.jpg}
+\caption{An image file before being scaled.}
+\label{fig:noscale}
+\end{minipage}\hfill
+\begin{minipage}{0.45\textwidth}
+\centering
+\includegraphics[width = .4\textwidth]{bobrossnew2.jpg}
+\caption{The same image after being scaled.}
+\label{fig:scale}
+\end{minipage}
+\end{figure}
+
+After rescaling, I used ImageMagick to convert the image files to .txt files with 400 rows and three columns: x, y, and rgb. The (x,y) pair gives the pixel coordinate of each of the 400 pixels and the rgb is a triplet of red, green, and blue color concentration ranging in value from 0 to 255 for the color of the pixel. The code for the image scaling and conversion is given in the appendix. I then moved back into \texttt{R} to read and process the .txt files. I split the rgb column for each painting into three separate columns, one for each color.  The resulting data frame looks like this:
+<<txt_file, echo = FALSE>>=
+library(plyr)
+paintings <- NULL
+for (i in 1:1){ #ran from 1 to 242 originally. only have it run 1 here for brevity.
+  file.name <- paste("~/Desktop/503/Project/txtfiles/bobross",i,".txt", sep='')
+  text.file <- read.table(file.name, stringsAsFactors=F)
+  text.file[,1] <- gsub(":","",text.file[,1])
+  coords <- ldply(strsplit(text.file[,1], ","))
+  names(coords) <- c('x', 'y')
+  coords$x <- as.numeric(coords$x)
+  coords$y <- as.numeric(coords$y)
+  text.file[,2] <- gsub("\\)", "", gsub("\\(", "", text.file[,2]))
+  colors <- ldply(strsplit(text.file[,2], ","))
+  names(colors) <- c('red', 'green', 'blue')
+  colors$red <- as.numeric(colors$red)
+  colors$green <- as.numeric(colors$green)
+  colors$blue <- as.numeric(colors$blue)
+  paintings[[i]] <- data.frame(coords, colors)
+}
+paintings2 <- ldply(paintings)
+head(paintings2,4)
+@
+Next, I turned each painting into a single vector of length 1200 and combined all of the paintings into a single data frame.  There are 1200 variables for each painting, one for each of the three color values of each of the 400 pixels. The resulting data frame is the data frame that I use for all of my analyses; it has 242 rows and 1201 columns. The first few rows and columns look like this: 
+<<get_paint_df, echo=FALSE>>=
+paint.df <- read.csv("~/Desktop/503/Project/clean_paint_data.csv")
+paint.df <- paint.df[,-1]
+column.names <- paste(rep(1:400,each=3),c('r','g','b'),sep='')  # 1200 variables. p >> n
+names(paint.df) <- c('id', column.names)
+paint.df[1:5,1:10]
+@
+Columns 1r, 1g, and 1b are the red, green, and blue color values in pixel 1.  Pixel 1 has coordinates $(0,0)$, pixel 2 has coordinates $(1,0)$, pixel 21 has coordinates $(0,1)$, and so on, ending with Pixel 400, which has coordinates $(19,19)$.  
+
+\section{Principal Component Analysis}
+Because I have 1200 variables and only 242 observations, I need to do some dimension reduction in order to be able to do any analyses on my data.  I chose to use principle components as my dimension reduction method because it is widely used in image reconstruction.
+  \subsection{PCA via SVD}
+  To use principal components on my data, I first need to center the columns of my data.  Then, I do a singular value decomposition on the centered data frame as follows:
+    $$ \mathbf{X} = \mathbf{U} \mathbf{D} \mathbf{V}' $$
+where $\mathbf{X}$ is the $242 \times 1200 $ data frame whose columns have been centered, $\mathbf{U}$ is a $242 \times 242$ matrix whose columns span the column space of $\mathbf{X}$, $\mathbf{D}$ is a $242 \times 242$ diagonal matrix of the singular values, and $\mathbf{V}$ is a $1200 \times 242$ matrix whose columns are the principal component directions in $\mathbb{R}^{1200}$ of the 242 observations.  Then, I calculate the principal components of the observations as follows: for $j = 1, 2, \dots, 242$, the $j^{th}$ principal component (of length 242) is
+    $$ \mathbf{z}_j = \mathbf{X} \mathbf{v_j}. $$
+I then use these principal components to compute the distance between observations and do the clustering. These are the observations I cluster in \autoref{sec:init_hclust}.  The code for the singular value decomposition and caluclation of the principal components is given in the appendix.
+
+\subsection{Initial Cluster Analyses}
+\label{sec:init_hclust}
+In my first attempt at clustering, I removed the 16 smallest principal components of the 242 because their singular values were extremely small, less than $10^{-10}$. I then use Euclidean distance to compute the distance between these principal components of the paintings, then use various methods of hierarchical clustering in the \texttt{hclust()} function to cluster the paintings. I have called this section ``Initial Cluster Analyses" because after playing around with a few different methods of hierarchical clustering, I found an error in my data. When I performed single linkage hierarchical clustering on the 226 principal components and plotted the resulting dendrogram, I noticed something odd.  
+
+\par In \autoref{fig:single_dendro} in the figure and table appendix, there are 18 pairs of images that get paired together at height zero, and 2 additional pairs that get paired off far before any of the others, around height 250 or so.  I looked at the original images that correspond to these 20 pairs of images, and it turns out that these 20 pairs all correspond to repeated images. So, there are 20 images in the data set twice.  I recorded these and then re-did my initial principal components analysis with these multiple images removed.  
+
+\par After removing the repeated images, I redid the singular value decompostition. I found that there were no longer any extremely small singular values. The smallest was about $35.9$, which is still fairly large.  The 222 principal components I calculated from this singular value decomposition are the variables that I use to cluster the paintings in \autoref{sec:hclust}, \autoref{sec:kmeans}, and \autoref{sec:mbc}. 
+
+  \subsection{Variance Explained by Principle Components}
+  The squared singular values in the matrix $\mathbf{D}$ tell us the amount of variance explained by each of the principal components. The percentage of variance explained by each as well as the cumulative percent of variance explained are shown in \autoref{fig:screeplot}. The first 15 principal components explain about 75\% of the total variation in the data, and the first 80 explain just over 95\% of the total variation.  In \autoref{sec:hclust}, \autoref{sec:kmeans}, and \autoref{sec:mbc}.  I use all of the principal components to cluster the paintings.  In \autoref{sec:pca50} I then compare the best clustering method I determine to the same method in using the first 80 principal components as my data instead of all 222 of them. I want to see if the clustering is as good as or maybe even better when just using the 80 most principal components.  
+<<remove_repeats, echo = FALSE>>=
+paint.df <- read.csv("~/Desktop/503/Project/clean_paint_data.csv")
+paint.df <- paint.df[,-1]
+means.paint.cols <- apply(paint.df[,-1], 2, mean)
+center <- function(x) x - mean(x)
+paint.df.cent <- apply(paint.df[,-1], 2, center)
+mults <- c(10, 2, 50, 140, 45, 34, 143, 13, 187, 238, 7, 25, 43, 49, 67, 97, 155, 210, 85, 104)
+id.new <- c(1:242)[-mults]
+svd.paint <- svd(paint.df.cent[-mults,])
+pcs.paint <- data.frame(apply(svd.paint$v, 2, function(x) as.matrix(paint.df.cent[-mults,])%*%x))
+pcs.paint$id <- id.new
+class.pcs <- data.frame(id = id.new)
+pcs.paint.dist <- dist(pcs.paint[, -ncol(pcs.paint)])
+pcs.hc.wardD <- hclust(pcs.paint.dist, method="ward.D")
+class.pcs$hc.wardD.13 <- factor(cutree(pcs.hc.wardD, k = 13))
+pcs.hc.wardD2 <- hclust(pcs.paint.dist, method="ward.D2")
+class.pcs$hc.wardD2.14 <- factor(cutree(pcs.hc.wardD2, k = 14))
+pcs.hc.complete <- hclust(pcs.paint.dist, method="complete")
+class.pcs$hc.complete.7 <- factor(cutree(pcs.hc.complete, k = 7))
+@
+<<screeplot, echo=FALSE, fig.align='center', out.width = ".5\\textwidth", fig.width=6, fig.height=4, fig.cap="Scree plot of the final 222 principal components I use in my analyses. The horizontal dotted lines are at 90, 95, and 99\\% of total variance explained.">>=
+library(ggplot2)
+qplot(x = 1:length(svd.paint$d),svd.paint$d^2/sum(svd.paint$d^2), xlab = "Principal Component Number", ylab = "Percent of Variance Explained", main = "Percent of Variance Explained by the Principal Components", geom = 'line')  + geom_line(data = NULL, aes(x = 1:length(svd.paint$d), y = cumsum(svd.paint$d^2/sum(svd.paint$d^2))), colour='red') + geom_hline(yintercept = c(.9,.95,.99), linetype = I(2))
+@
+
+\section{Hierarchical clustering}
+\label{sec:hclust}
+Because there is not a good way to measure the fit of a hierarchical clustering method like there is with $k$-means, I had to determine what I would call the ``best" clustering from a hierarchical clustering method.  Because I decided that I want to make the clusters as homogenous as possible, I chose to only examine the different size clusters from the \texttt{ward.D}, \texttt{ward.D2}, and \texttt{complete} agglomerative methods. The other methods tended to have one group of very large size, typically greater than 200, and then have several singleton clusters. Since my goal is to find themes in the paintings, I wanted to avoid separating one painting from the rest.  For this reason, to determine the best clustering per method by increasing the number of clusters, $k$, until I found a clustering of $K+1$ groups that separated fewer than 5 paintings into their own cluster.  Then, I settled on $K$ clusters for that method. 
+  \subsection{Method: Ward's D}
+ For Ward's D, I settled on 13 clusters, because at 14 clusters a cluster of only two paintings is created.  The dendrogram for Ward's D (which does not actually minimize the Ward criterion) is given in \autoref{fig:wardsd}.  The thirteen groups are of sizes 13, 26, 13, 13, 19, 20, 17, 33, 12, 17, 20, 12, and 7. To demonstrate the ability of this clustering method, I've provided three of the 13 paintings in the first cluster in \autoref{fig:wardd1}. These three paintings, along with the other ten paintings in this cluster, have an oval border of some kind on the outside with a painted scene inside of the oval.  In the FiveThirtyEight post, Hickey also determined a group of paintings that had an oval border, so we appear to have at least one cluster of overlap.  
+ \begin{figure}[htbp]
+  \centering
+  \begin{minipage}{0.32\textwidth}
+  \centering
+  \includegraphics[width = .55\textwidth]{bobross1.jpg}
+  \end{minipage}\hfill
+  \begin{minipage}{0.32\textwidth}
+  \centering
+  \includegraphics[width = .55\textwidth]{bobross32.jpg}
+  \end{minipage}
+  \begin{minipage}{0.32\textwidth}
+  \centering
+  \includegraphics[width = .55\textwidth]{bobross66.jpg}
+  \end{minipage}
+  \caption{Three of the paintings in the first cluster using 13 clusters made by the Ward's D method.}
+  \label{fig:wardd1}
+  \end{figure}
+  
+  \subsection{Method: Ward's D2}
+  For Ward's D2, I settled on 14 clusters, because at 15 clusters a cluster of only one painting is created.  The dendrogram for Ward's D (which does actually minimize the Ward criterion) is given in \autoref{fig:wardsd2}.  The 14 clusters are of sizes 8, 10, 5, 21, 23, 21, 19, 10, 18, 22, 24, 23, 10, and 8. To examine the effectiveness of this clustering method here, I look at three of the five paintings in the third cluster in \autoref{fig:wardd2}.  These three paintings look extremely similar: the all have bright blue skies, coniferous trees, clouds, and a body of water.  The first two also have snow-capped mountains, while the third has a waterfall stirring up a lake.  However, it is hard to tell the difference between the clouds and the snow covered mountains that are in roughly the same place on the canvas.  The other two paintings in the group also contain snow-capped mountains, coniferous trees, a body of water, and blue skies.  This is really the type of group I was hoping to get when doing this assignment: they all share a few features, not just one or two tags like the groups that Hickey found.  
+\begin{figure}[htbp]
+  \centering
+  \begin{minipage}{0.32\textwidth}
+  \centering
+  \includegraphics[width = .55\textwidth]{bobross4.jpg}
+  \end{minipage}\hfill
+  \begin{minipage}{0.32\textwidth}
+  \centering
+  \includegraphics[width = .55\textwidth]{bobross57.jpg}
+  \end{minipage}
+  \begin{minipage}{0.32\textwidth}
+  \centering
+  \includegraphics[width = .55\textwidth]{bobross125.jpg}
+  \end{minipage}
+  \caption{Three of the paintings in the third cluster using 14 clusters made by the Ward's D2 method.}
+  \label{fig:wardd2}
+  \end{figure}
+  
+  \subsection{Method: Complete Linkage}
+  For the complete linkage method, I chose seven clusters. At eight clusters, one of the paintings from the second smallest group got separated into its own cluster.  The dendrogram for the complete linkage clustering is given in \autoref{fig:complete}. The sizes of the seven clusters are 55, 59, 14, 56, 23, 8, and 7.  To demonstrate this clustering, I randomly sampled 3 paintings in the largest cluster. These are presented in \autoref{fig:complete2}.  The paintings here are not as obviously similar as in \autoref{fig:wardd1} and \autoref{fig:wardd2}.  They do share some features: they all have coniferous trees, a river, and distant snow-capped mountains. The first and third also both have a cabin structure in them and the sun is setting.  The second one, however, is not as colorful as the other two. Nevertheless, this still seems to be a very good clustering of the paintings.   
+  \begin{figure}[htbp]
+  \centering
+  \begin{minipage}{0.32\textwidth}
+  \centering
+  \includegraphics[width = .75\textwidth]{bobross87.jpg}
+  \end{minipage}\hfill
+  \begin{minipage}{0.32\textwidth}
+  \centering
+  \includegraphics[width = .75\textwidth]{bobross110.jpg}
+  \end{minipage}
+  \begin{minipage}{0.32\textwidth}
+  \centering
+  \includegraphics[width = .55\textwidth]{bobross183.jpg}
+  \end{minipage}
+  \caption{Three of the paintings in the second of seven clusters using the complete linkage method.}
+  \label{fig:complete2}
+  \end{figure}
+  
+  \subsection{Choosing a Hierarchical Clustering}
+  To pick between the different methods of hierarchical clustering, I first look at tables to determine how consistent the clusterings are.  These are given in the table appendix in \autoref{tab:comp_ward}, \autoref{tab:comp_ward2}, and \autoref{tab:ward_ward2}.  The Ward's D and the Ward's D2 clusterings look pretty similar. There are a lot of zeros.  The complete clustering looks very different from the other two, but I think that is mostly due to there being many fewer clusters.  I couldn't decide which one was best from these tables, so I also looked at some of the cluster evaluation criterion in the \texttt{cluster.stats()} function in the \texttt{fpc} package.  A plot of 14 criterion is given in \autoref{fig:hclust_stats}.  The ch, dunn2, entropy, and max.diameter all suggest that the best clustering is the complete linkage clustering with seven clusters.  So, I decided that the complete linkage method's clustering was the best hierarchical clustering.  
+<<hclust_stats, echo=FALSE, fig.align='center', out.width = ".55\\textwidth", fig.cap="Clustering evaluation criterion for the three methods of hierarchical clustering", fig.pos='[!htbp]'>>=
+library(fpc)
+stats.wardD2 <- cluster.stats(pcs.paint.dist, as.numeric(as.character(class.pcs$hc.wardD2.14)))
+stats.wardD <- cluster.stats(pcs.paint.dist, as.numeric(as.character(class.pcs$hc.wardD.13)))
+stats.complete <- cluster.stats(pcs.paint.dist, as.numeric(as.character(class.pcs$hc.complete.7)))
+library(plyr)
+stats.hc <- ldply(stats.wardD[c(13:19,21,24:29,31:32)])
+stats.hc$wardD2 <- ldply(stats.wardD2[c(13:19,21,24:29,31:32)])[,2]
+stats.hc$complete <- ldply(stats.complete[c(13:19,21,24:29,31:32)])[,2]
+names(stats.hc)[1:2] <- c('metric','wardD')
+library(tidyr)
+stats.hc2 <- gather(stats.hc, method, value, wardD:complete)
+qplot(x = method, y = value, data = stats.hc2) + facet_wrap(~metric, scales = 'free_y') 
+@
+\section{K-Means}
+\label{sec:kmeans}
+Next, I look at clustering the data using $K$-means.  I first decide on a value of $K$ by looking at the cluster statistics provided by the \texttt{fpc} package.  A plot of eleven of these statistics is given in \autoref{fig:kmeans_plot}.  Some of the statistics, like minimum separation provide no clear clustering ``winner." Others, like wb.ratio, are suggesting that more clusters are always better. The Dunn criterion, which is a ratio of smallest distance between points from different clusters over maximum distance of points within a cluster, indicates that 20 clusters is the best because is has the highest value of this ratio.  $K=20$ is also clearly supported by the maximum diameter and dunn2 criteria.  So, I chose 20 clusters for my $K$-means clustering. The sizes of my 20 clusters are 6, 12, 8, 8, 16, 15, 4, 8, 17, 6, 6, 5, 6, 24, 10, 11, 8, 18, 19, and 15.  The paintings that are in the group of four are shown in \autoref{fig:kmeans_paintings}.  Interestingly, they form two distinct pairs: one pair of paintings with cabins in the woods in winter, and another pair of Bob Ross' self portraits. 
+<<kmeans_code, echo=FALSE, message=FALSE>>=
+library(fpc)
+ncl <- NULL
+for (i in 4:25) {
+  df.km <- kmeans(pcs.paint[, -ncol(pcs.paint)], i)
+  ncl <- rbind(ncl, c(i, cluster.stats(dist(pcs.paint[, -ncol(pcs.paint)]), df.km$cluster)$wb.ratio, 
+                      cluster.stats(dist(pcs.paint[, -ncol(pcs.paint)]), df.km$cluster)$average.between, 
+                      cluster.stats(dist(pcs.paint[, -ncol(pcs.paint)]), df.km$cluster)$average.within, 
+                      cluster.stats(dist(pcs.paint[, -ncol(pcs.paint)]), df.km$cluster)$max.diameter, 
+                      cluster.stats(dist(pcs.paint[, -ncol(pcs.paint)]), df.km$cluster)$min.separation, 
+                      cluster.stats(dist(pcs.paint[, -ncol(pcs.paint)]), df.km$cluster)$within.cluster.ss, 
+                      cluster.stats(dist(pcs.paint[, -ncol(pcs.paint)]), df.km$cluster)$dunn, 
+                      cluster.stats(dist(pcs.paint[, -ncol(pcs.paint)]), df.km$cluster)$dunn2, 
+                      cluster.stats(dist(pcs.paint[, -ncol(pcs.paint)]), df.km$cluster)$entropy, 
+                      cluster.stats(dist(pcs.paint[, -ncol(pcs.paint)]), df.km$cluster)$ch, 
+                      cluster.stats(dist(pcs.paint[, -ncol(pcs.paint)]), df.km$cluster)$sindex))
+}
+ncl <- data.frame(ncl)
+colnames(ncl) <- c("k", "wb.ratio", "avg.bw", "avg.win", "max.diam", "min.sep", "ss.win", "dunn", "dunn2", "entropy", "ch", "sindex")
+library(dplyr)
+library(tidyr)
+
+ncl2 <- ncl[,-13] %>% gather(metric, value, wb.ratio:sindex)
+#qplot(x = k, y = value, data = ncl2, geom = 'line') + facet_wrap(~metric, scales = 'free_y') 
+@
+
+\begin{figure}[htbp]
+\centering
+  \includegraphics[width = .65\textwidth]{kmeans_stats.pdf}
+  \caption{Clustering evaluation criterion for different sizes of K-means clustering from four to 25 clusters.}
+  \label{fig:kmeans_plot}
+\end{figure}
+<<kmeans20,echo=FALSE>>=
+set.seed(-649487537)
+pcs.km.20 <- kmeans(pcs.paint[, -ncol(pcs.paint)], 20)
+class.pcs$km.20 <- pcs.km.20$cluster
+#table(class.pcs$km.20)
+@
+
+  \begin{figure}[htbp]
+  \centering
+  \begin{minipage}{0.23\textwidth}
+  \centering
+  \includegraphics[width = .85\textwidth]{bobross8.jpg}
+  \end{minipage}\hfill
+  \begin{minipage}{0.23\textwidth}
+  \centering
+  \includegraphics[width = .85\textwidth]{bobross19.jpg}
+  \end{minipage}
+  \begin{minipage}{0.23\textwidth}
+  \centering
+  \includegraphics[width = .85\textwidth]{bobross66.jpg}
+  \end{minipage}
+  \begin{minipage}{0.23\textwidth}
+  \centering
+  \includegraphics[width = .85\textwidth]{bobross229.jpg}
+  \end{minipage}\hfill
+  \caption{The four paintings in the smallest cluster of the 20 clusters created with $K$-means clustering.}
+  \label{fig:kmeans_paintings}
+  \end{figure}
+
+\section{Model Based Clustering}
+\label{sec:mbc}
+For my final cluster analysis, I chose model-based clustering.  I chose this method because I thought that similar paintings form groups that look like they come from similar normal models. The best-fitting model according to the Bayes Information Criterion was the \texttt{EVI} model with four components: groups from a diagonal distribution with equal volume ellipses of varying shapes. The BIC diagnostic plot for the various model fits is given in the figure appendix in \autoref{fig:plot_mclust}. I was pretty disappointed with this result because it resulted in so few clusters.  All four clusters are very large: sizes are 85, 60, 48, and 29.  Three of the paintings from the first cluster are shown in \autoref{fig:mbc}.  They do have similar colorings. However, the scenes they depict are very different: a beach, a mountainside lake, and a more abstract tree in a forest scene.   
+<<mclust, echo=FALSE,message=FALSE>>=
+library(mclust)
+df.mbc <- Mclust(pcs.paint, G=4:25, modelNames=c("EII", "VII", "EEI", "EVI", "VEI", "VVI"))
+class.pcs$mbc <- factor(df.mbc$classification)
+# sample(class.pcs$id[class.pcs$mbc==1], 3)
+# sample(class.pcs$id[class.pcs$mbc==2], 3)
+# sample(class.pcs$id[class.pcs$mbc==3], 3)
+# sample(class.pcs$id[class.pcs$mbc==4], 3)
+@
+ \begin{figure}[htbp]
+  \centering
+  \begin{minipage}{0.32\textwidth}
+  \centering
+  \includegraphics[width = .55\textwidth]{bobross121.jpg}
+  \end{minipage}\hfill
+  \begin{minipage}{0.32\textwidth}
+  \centering
+  \includegraphics[width = .55\textwidth]{bobross136.jpg}
+  \end{minipage}
+  \begin{minipage}{0.32\textwidth}
+  \centering
+  \includegraphics[width = .55\textwidth]{bobross230.jpg}
+  \end{minipage}
+  \caption{Three of the paintings in the largest cluster from the best model-based clustering arrangement.}
+  \label{fig:mbc}
+  \end{figure}
+
+\section{Picking the ``Best" Clustering}
+First, I examine the cluster statistics for the best cluster from each method: hierarchical, $K$-means, and model-based.  These values are shown in \autoref{fig:best_clusters_stats}. There are some conflicting findings: the ch statistic suggests that the complete hierarchical clustering is the best, while the dunn suggests that $k$-means clustering is best, and the wb.ratio statistic suggests that model-based clustering is the best.  Because of these conflicting findings, I decided to inspect the clusterings myself to determine which one was best.  So, I wasn't able to avoid ``manual labor" completely like I had been hoping to! 
+
+\par After inspecting the three sets of clusters, I decided that the best clustering was the $K$-means clustering.  It had the most groups that were the most homogenous.  The cluster numbers, sizes, and descriptions are given in \autoref{tab:clust_names}.  Even between the clusters, there are some reoccuring objects, like mountains or coniferous trees.  Some of the paintings that didn't fit in with their clusters were ocean scenes with frothy waves that looked like small snow-covered mountains, so it makes sense that they were grouped with them.  
+
+<<best_clusters_stats, echo=FALSE, fig.align='center', out.width = ".55\\textwidth", fig.cap="Clustering evaluation criterion for the three methods clustering: hierarchical, k-means, and mobel-based.", fig.pos='[htbp]'>>=
+library(fpc)
+stats.complete <- cluster.stats(pcs.paint.dist, as.numeric(as.character(class.pcs$hc.complete.7)))
+stats.kmeans <- cluster.stats(pcs.paint.dist, as.numeric(as.character(class.pcs$km.20)))
+stats.mbc <- cluster.stats(pcs.paint.dist, as.numeric(as.character(class.pcs$mbc)))
+library(plyr)
+stats.all <- ldply(stats.complete[c(13:19,21,24:29,31:32)])
+stats.all$kmeans <- ldply(stats.kmeans[c(13:19,21,24:29,31:32)])[,2]
+stats.all$mbc <- ldply(stats.mbc[c(13:19,21,24:29,31:32)])[,2]
+names(stats.all)[1:2] <- c('metric','complete')
+library(tidyr)
+stats.all2 <- gather(stats.all, method, value, complete:mbc)
+qplot(x = method, y = value, data = stats.all2) + facet_wrap(~metric, scales = 'free_y') 
+@
+
+
+
+
+\section{Using Fewer Variables}
+\label{sec:pca50}
+
+<<kmeans80, echo=FALSE>>=
+set.seed(-649487537)
+pcs80.km.20 <- kmeans(pcs.paint[, 1:80], 20)
+class.pcs$km80.20 <- pcs80.km.20$cluster
+perc.same <- length(which(class.pcs$km.20 == class.pcs$km80.20))/nrow(class.pcs)
+km80.stats <- cluster.stats(dist(pcs.paint[, 1:80]),class.pcs$km80.20)
+@
+
+Now, I redo the $K$-means clustering of size 20 with only 80 of the 222 principal components.  In \autoref{fig:screeplot}, I show that at 80 principal components, 95\% of the variance between paintings is described.  Because I set a random seed before the first $k$-means clustering, I was able to set the same seed and recreate the original $k$-means clustering.  In the reduced variable clustering, $\Sexpr{round(perc.same*100, 2)}$\% of the painting were clustered into the same group as before.  The sizes of the 20 groups are given in \autoref{tab:kmeans_comp} for easy comparison.  I did some quick visual inspections of the paintings that ended up in different clusters and found that some of them fit into their new clusters just as well or better than they fit into their first clusters. There were also some, like a painting of sunflowers, that didn't really fit in any of the groups.  The most common cluster for a painting to be moved from was the $17^{th}$ cluster, the ``bright yellow miscellany" cluster.  In fact, all eight of those paintings were moved to different groups, and the five paintings that were moved into cluster 17 could be called ``yellow-y."  The most common cluster for paintings to be moved to was cluster 11, the ``lakes in fall" cluster.  A couple contained trees with fall colours, but a lot of them were sunset scenes, so they were bright yellow, and better fit into their ``bright yellow miscellany" category.  The wb ratio statistic was slightly higer, about 0.02, for the original 20 clusters. The dunn ratio was also higher by about 0.03 for the original clustering.  Because of this, I think that the original 20 clusters are the best, but the 80 principal components clustering performed extremely well and was not too far behind the performance of all 222 principal components.  
+
+<<kmeans_comp, echo=FALSE, results='asis'>>=
+library(xtable)
+comp.tab <- rbind(table(class.pcs$km.20), table(class.pcs$km80.20))
+xtable(comp.tab, digits = 0, caption = "Comparing the 20 clusters created by the K-means clustering for all 222 and 80 of 222 principal components. The 80 principal component clustering is in the second row.", label = "tab:kmeans_comp")
+@
+
+\section{A Literal Average of Bob Ross Paintings}
+
+Finally, I thought it would be fun to see the average painting in each of the 20 clusters. For this, I use the clusters created by all 222 principal components.  I used the \texttt{dplyr} package to calculate the mean of the red, green, and blue values in each pixel in each painting in each cluster, and I used \texttt{ggplot2} to plot them.  I plotted the averages of all 20 clusters in \autoref{fig:avg_paints}.  
+
+<<avg_paints, echo=FALSE, message = FALSE, dependson="txt_file", fig.cap="The average paintings of the 20 clusters.  Compare with the descriptions in \\autoref{tab:clust_names}", fig.pos='h'>>=
+library(gridExtra)
+library(dplyr)
+paintings2 <- read.csv("~/Desktop/503/Project/paintings2.csv")[,-1]
+paintings3 <- paintings2[-which(paintings2$id %in% mults),-7]
+paintings3$cluster <- rep(class.pcs$km.20, each = 400)
+avg_paintings <- paintings3 %>% group_by(cluster, x, y) %>% summarise_each(funs(mean))
+
+avg_paintings$HEX <- as.character(rgb(avg_paintings[,c('red','green','blue')],max=255))
+
+plot <- NULL
+for (i in 1:20){
+  plot[[i]] <- ggplot(data = subset(avg_paintings, cluster == i), aes(x = -x, y = y)) + 
+    geom_tile(fill = subset(avg_paintings, cluster == i)$HEX, colour = subset(avg_paintings, cluster == i)$HEX) + labs(title = paste('cluster',i,sep=' ')) + theme_bw() + theme(aspect.ratio = 1, line = element_blank(), panel.background = element_blank(), plot.background = element_blank(), 
+                   axis.text=element_blank(), axis.title=element_blank(),text = element_text(size=6), plot.margin = unit(c(0,0,0,0), "cm")) 
+}
+
+do.call(grid.arrange, plot)
+@
+
+In my opinion, it's pretty remarkable how well the cluster names in \autoref{tab:clust_names} match the average paintings above. Clusters 1, 8, 12, and 13 seem to match especially well with their respective descriptions of shadowy forests, light oval borders, winter sunsets with oval borders, and darker scenes.  My little unsupervised learning ``experiment" has turned out extremely well! And, I didn't have to watch 400 episodes of \emph{The Joy of Painting}! 
+
+\clearpage
+\section{Table \& Figure Appendix}
+  \subsection{Initial Cluster Analyses}
+<<single_dendro, echo = FALSE, fig.align='center', out.width = ".5\\textwidth", fig.cap='Dendrogram from the single linkage hierarchical clustering', fig.pos='H'>>=
+paint.df <- read.csv("~/Desktop/503/Project/clean_paint_data.csv")
+svd.paint <- svd(paint.df[,-1])
+# columns of svd.paint$v are the principal component directions
+# z_j = X*v_j are the principal components. these are the cols of the mat below
+pcs.paint <- apply(svd.paint$v, 2, function(x) as.matrix(paint.df[,-1])%*%x)
+#find the most important PC:
+#starting at 226, all are essentially 0. 
+pcs.paint.import <- pcs.paint[,1:225]
+# cluster on the principal components.
+pcs.paint.import <- data.frame(pcs.paint.import)
+pcs.paint.import$id <- 1:242
+pcs.paint.dist <- dist(pcs.paint.import[, -ncol(pcs.paint.import)])
+pcs.hc.single <- hclust(pcs.paint.dist, method="single")
+plot(pcs.hc.single)
+@
+
+%<<remove_repeats2, echo = FALSE>>=
+% paint.df <- read.csv("~/Desktop/503/Project/clean_paint_data.csv")
+% means.paint.cols <- apply(paint.df[,-1], 2, mean)
+% center <- function(x) x - mean(x)
+% paint.df.cent <- apply(paint.df[,-1], 2, center)
+% mults <- c(10, 2, 50, 140, 45, 34, 143, 13, 187, 238, 7, 25, 43, 49, 67, 97, 155, 210, 85, 104)
+% id.new <- c(1:242)[-mults]
+% svd.paint <- svd(paint.df.cent[-mults,-1])
+% pcs.paint <- apply(svd.paint$v, 2, function(x) as.matrix(paint.df.cent[-mults,-1])%*%x)
+% class.pcs <- data.frame(id = id.new)
+% pcs.paint.dist <- dist(pcs.paint[, -ncol(pcs.paint)])
+%@
+  \subsection{Hierarchical Clustering}
+<<wardsd, echo = FALSE, fig.align='center', out.width = ".5\\textwidth", fig.cap="Dendrogram from the Ward's D method of hierarchical clustering", fig.pos='H'>>=
+plot(pcs.hc.wardD)
+@
+
+<<wardsd2, echo = FALSE, fig.align='center', out.width = ".5\\textwidth", fig.cap="Dendrogram from the Ward's D2 method of hierarchical clustering", fig.pos='H'>>=
+plot(pcs.hc.wardD2)
+@
+
+<<complete, echo = FALSE, fig.align='center', out.width = ".5\\textwidth", fig.cap="Dendrogram from the Complete Linkage method of hierarchical clustering", fig.pos='H'>>=
+plot(pcs.hc.complete)
+@
+
+<<comp_ward, fig.align='center',echo=FALSE,results='asis'>>=
+library(xtable)
+t1 <- table(as.factor(class.pcs$hc.complete.7), as.factor(class.pcs$hc.wardD.13))
+print(xtable(t1, digits = 0, caption = "Comparing the seven clusters created by complete linkage (in rows) to the 13 clusters created by Ward's D (in columns).", label = "tab:comp_ward"), table.placement = 'H')
+@
+  
+<<comp_ward2, fig.align='center',echo=FALSE, results='asis'>>=
+library(xtable)
+t2 <- table(class.pcs$hc.complete.7, class.pcs$hc.wardD2.14)
+print(xtable(t2, digits = 0, caption = "Comparing the seven clusters created by complete linkage (in rows) to the 14 clusters created by Ward's D2 (in columns).", label = "tab:comp_ward2"), table.placement = 'H')
+@
+
+<<ward_ward2, fig.align='center',echo=FALSE, results='asis', dependson='remove_repeats'>>=
+library(xtable)
+t2 <- table(class.pcs$hc.wardD.13, class.pcs$hc.wardD2.14)
+print(xtable(t2, digits = 0, caption = "Comparing the 13 clusters created by Ward's D (in rows) to the 14 clusters created by Ward's D2 (in columns).", label = "tab:ward_ward2"), table.placement = 'H')
+@
+
+  \subsection{Model Based Clustering}
+<<plot_mclust, echo=FALSE, fig.align='center', fig.cap="BIC plot from the model based clustering. The best model is EVI with 4 components.", out.width=".55\\linewidth", fig.pos = 'H'>>=
+plot(df.mbc, what = "BIC")
+@
+
+  \subsection{Picking the ``Best" Clustering}
+  \begin{table}[H]
+  \centering
+  \begin{tabular}{c|l|lp{5cm}}
+  Cluster & Size & Description \\
+  \hline
+  1 & 6 & Shadowy Forests \\
+  2 & 12 & Lakes, Mountains, Coniferous Trees, \& Bright Blue Skies \\
+  3 & 8 & Ocean Scenes or Mountains near Lakes \\ 
+  4 & 8 & Rivers Running through a Forest \\
+  5 & 16 & Winter near water (4) \\
+  6 & 15 & Sunsets in winter (4) \\
+  7 & 4 & All blues \& browns \\
+  8 & 8 & Light oval borders \\
+  9 & 17 & Abstract forests \& Sunsets in the woods \\
+  10 & 6  & Light-colored miscellany \\
+  11 & 6  & Lakes in fall \\
+  12 & 5 & Winter sunsets with oval border \\
+  13 & 6  & Darker scenes \\
+  14 & 24 & Cabins in forests at dusk (4) \\
+  15 & 10 & Saturated color miscellany \\
+  16 & 11 & Sunsets behind mountains near forests and rivers \\
+  17 & 8 & Bright yellow miscellany \\
+  18 & 18 & Rivers in forests leading to distant mountains (1) \\
+  19 & 19 & Abstract or bright green forests (2) \\
+  20 & 15 & Bright blue skies behind snow-capped mountains near rivers and coniferous trees
+  \end{tabular}
+  \caption{Descriptions of the 20 clusters in the best clustering. Numbers in parentheses are the number of paintings in that cluster that don't fit with the rest of the paintings, and hence the given descriptions.}
+  \label{tab:clust_names}
+  \end{table}
+
+\clearpage
+  
+\section{Code Appendix}
+  \subsection{Data Collection}
+  Download .jpg files of paintings: 
+<<get_paintings, eval = FALSE>>=
+library(rvest)
+paintings <- html("http://www.saleoilpaintings.com/paintings/bob-ross/bob-ross-sale-3_1.html")
+images <- paintings %>% html_nodes("img") %>% html_attr("src") 
+remove <- which(images == "/image/buy-art.gif")  #logo for website repeated over and over
+paintings2 <- images[-remove]  #get rid of logo
+img_urls <- paste("http://www.saleoilpaintings.com",paintings2,sep='')
+img_urls2 <- img_urls[grep(".jpg",img_urls)]  #only get jpgs, not gifs
+for (i in 1:length(img_urls2)){
+  destination <- paste("~/Desktop/503/Project/paintings/bobross",i,".jpg",sep='')
+  download.file(url = img_urls2[i], destfile = destination)
+}
+@
+  Resize .jpg files and convert to .txt files:
+<<resize_paintings, eval=FALSE>>=
+# in Python 
+from wand.image import Image
+#save file names in a list
+paintings = ["" for x in range(1,243)]
+for x in range(0, 242):
+    paintings[x] = "bobross%d.jpg" % (x+1)
+#rescale all all images to 20 X 20 pixels
+for x in range(0,242):
+  with Image(filename=paintings[x]) as img:
+		with img.clone() as ic:
+			ic.resize(20, 20)
+			newname = "bobrossnew%d.jpg" % (x+1)
+			ic.save(filename=newname)
+#copy-paste results of this into the command line to convert jpgs to txt files
+for x in range(0,242):
+	name = "convert bobrossnew%d.jpg bobross%d.txt" % (x+1,x+1)	    
+	print(name)
+@
+Reading .txt files into \texttt{R} and convert rgb column to three columns, one per color:
+<<painting_df, eval=FALSE>>=
+#after running python code, read all the txt files into R
+library(plyr)
+paintings <- NULL
+for (i in 1:242){
+  file.name <- paste("~/Desktop/503/Project/txtfiles/bobross",i,".txt", sep='')
+  text.file <- read.table(file.name, stringsAsFactors=F)
+  text.file[,1] <- gsub(":","",text.file[,1])
+  coords <- ldply(strsplit(text.file[,1], ","))
+  names(coords) <- c('x', 'y')
+  coords$x <- as.numeric(coords$x)
+  coords$y <- as.numeric(coords$y)
+  text.file[,2] <- gsub("\\)", "", gsub("\\(", "", text.file[,2]))
+  colors <- ldply(strsplit(text.file[,2], ","))
+  names(colors) <- c('red', 'green', 'blue')
+  colors$red <- as.numeric(colors$red)
+  colors$green <- as.numeric(colors$green)
+  colors$blue <- as.numeric(colors$blue)
+  paintings[[i]] <- data.frame(coords, colors)
+}
+paintings2 <- ldply(paintings)
+@
+  Create final data frame for analysis:
+<<data_final, eval=FALSE>>=
+#gather all paintings into a data frame with 1201 columns.
+paint.df <- data.frame(matrix(0, ncol = 1+400*3, nrow = 242))
+column.names <- paste(rep(1:400,each=3),c('r','g','b'),sep='')  # 1200 variables. p >> n
+names(paint.df) <- c('id', column.names)
+for (id in 1:242){
+  for (i in 1:400){
+    paint.df[id, 1+(3*(i-1)+1)] <- paintings[[id]][i,3]
+    paint.df[id, 1+(3*(i-1)+2)] <- paintings[[id]][i,4]
+    paint.df[id, 1+(3*(i-1)+3)] <- paintings[[id]][i,5]
+  }
+}
+#create painting ID column to be able to identify them later. 
+paint.df$id <- 1:242
+@
+  \subsection{Principal Component Analysis}
+  Singular value decomposition:
+<<svd, eval=FALSE>>=
+#Singular Value Decomposition (for Dimension Reduction)
+svd.paint <- svd(paint.df[,-1])
+# columns of svd.paint$v are the principal component directions
+# z_j = X*v_j are the principal components. these are the cols of the mat below
+pcs.paint <- apply(svd.paint$v, 2, function(x) as.matrix(paint.df[,-1])%*%x)
+@
+  \subsection{Initial Cluster Analysis}
+<<Rcode, eval=FALSE, ref.label=c("single_dendro", "remove_repeats"),echo=TRUE, cache=FALSE>>=
+@
+  \subsection{Hierarchical Clustering}
+<<Rcode2, eval=FALSE, ref.label=c("wards","wardsd2","complete", "hclust_stats"),echo=TRUE, cache=FALSE>>=
+@
+  \subsection{$K$-means Clustering}
+<<Rcode3, eval=FALSE, ref.label=c("kmeans_code", "kmeans20"),echo=TRUE, cache=FALSE>>=
+@  
+  \subsection{Model-Based Clustering}
+<<Rcode4, eval=FALSE, ref.label="mclust",echo=TRUE, cache=FALSE>>=
+@
+  \subsection{Using Fewer PCs}
+<<Rcode5, eval=FALSE, ref.label="kmeans80", echo=TRUE, cache=FALSE>>=  
+@
+  \subsection{Average Paintings}
+<<Rcode6, eval=FALSE, ref.label="avg_paints", echo=TRUE, cache=FALSE>>=  
+@
+
+\end{document}
